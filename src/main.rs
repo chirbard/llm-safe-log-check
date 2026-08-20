@@ -1,3 +1,5 @@
+mod estonian_id;
+mod ip;
 mod scanner;
 
 use anyhow::{Context, Result};
@@ -50,27 +52,52 @@ async fn run_file(path: &Path) -> Result<()> {
 }
 
 async fn scan_and_report(input: &str) -> Result<String> {
-    let redactions = scanner::scan(input).await?;
+    let llm_redactions = scanner::scan(input).await?;
+    let ip_redactions = ip::find_redactions(input);
+    let id_redactions = estonian_id::find_redactions(input);
 
-    if redactions.is_empty() {
+    let total = llm_redactions.len() + ip_redactions.len() + id_redactions.len();
+    if total == 0 {
         eprintln!("No sensitive content found.");
         return Ok(input.to_string());
     }
 
-    eprintln!("\nFound {} item(s) to redact:", redactions.len());
-    for r in &redactions {
+    eprintln!("\nFound {} item(s) to redact:", total);
+    for r in &llm_redactions {
         eprintln!("  [{}] {}", r.category, r.description);
+    }
+    for r in &ip_redactions {
+        eprintln!("  [ip_address] {} → {}", r.original, r.label);
+    }
+    for r in &id_redactions {
+        eprintln!("  [estonian_id] {} → {}", r.original, r.label);
     }
     eprintln!();
 
-    Ok(apply_redactions(input, &redactions))
+    // Apply LLM redactions first, then deterministic regex passes
+    let mut result = apply_llm_redactions(input, &llm_redactions);
+    result = apply_labeled_redactions(&result, &ip_redactions, |r| (&r.original, &r.label));
+    result = apply_labeled_redactions(&result, &id_redactions, |r| (&r.original, &r.label));
+    Ok(result)
 }
 
-fn apply_redactions(text: &str, redactions: &[scanner::Redaction]) -> String {
+fn apply_llm_redactions(text: &str, redactions: &[scanner::Redaction]) -> String {
     let mut result = text.to_string();
     for r in redactions {
-        let placeholder = format!("[REDACTED:{}]", r.category);
+        let placeholder = format!("REDACTED_{}", r.category.to_uppercase());
         result = result.replace(&r.original, &placeholder);
+    }
+    result
+}
+
+fn apply_labeled_redactions<T, F>(text: &str, redactions: &[T], get: F) -> String
+where
+    F: Fn(&T) -> (&String, &String),
+{
+    let mut result = text.to_string();
+    for r in redactions {
+        let (original, label) = get(r);
+        result = result.replace(original.as_str(), label.as_str());
     }
     result
 }

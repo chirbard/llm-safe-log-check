@@ -14,11 +14,12 @@ Return ONLY this JSON structure, nothing else:
 If sensitive content is found, return the exact substring to redact and its category:
 {"redactions":[{"original":"actual-secret-value","category":"api_key","description":"brief description"}]}
 
-Valid categories: api_key, password, pii, private_key, connection_string, other_secret
+Valid categories: api_key, password, pii, estonian_id, private_key, connection_string, other_secret
 
 Rules:
 - "original" MUST be the exact verbatim substring from the text — it will be used for string replacement
 - Flag real secrets: API keys, passwords, tokens, private keys, SSNs, credit card numbers
+- Flag Estonian personal identification codes: 11-digit codes starting with 1-8 (e.g. 38001085718) or prefixed with EE (e.g. EE38001085718) — use category "estonian_id". They may also appear embedded inside longer tokens (e.g. "ref38001085718") — still flag just the 11-digit portion as "original" and describe where it was found
 - Flag PII only if clearly identifiable (e.g. name paired with SSN, medical, or financial data)
 - Do NOT flag: placeholder values like "your-api-key-here", variable names, generic words
 - Do NOT flag file paths or URLs unless they contain embedded credentials
